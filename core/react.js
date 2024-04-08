@@ -13,30 +13,91 @@ function createElement(type, props, ...children) {
     type,
     props: {
       ...props,
-      children: children.map((child) =>
-        typeof child === 'string' ? createTextNode(child) : child
-      ),
+      children: children.map((child) => (typeof child === 'string' ? createTextNode(child) : child)),
     },
   };
 }
 
-function render(el, container) {
-  const dom =
-    el.type === 'TEXT_ELEMENT' ? document.createTextNode('') : document.createElement(el.type);
+function createDom(type) {
+  return type === 'TEXT_ELEMENT' ? document.createTextNode('') : document.createElement(type);
+}
 
-  Object.keys(el.props).forEach((key) => {
+function updateProps(dom, props) {
+  Object.keys(props).forEach((key) => {
     if (key !== 'children') {
-      dom[key] = el.props[key];
+      dom[key] = props[key];
     }
   });
-
-  const children = el.props.children;
-  children.forEach((child) => {
-    render(child, dom);
-  });
-
-  container.append(dom);
 }
+
+function initChildren(fiber) {
+  const children = fiber.props.children;
+  let prevChild = null;
+
+  children.forEach((child, index) => {
+    const newFiber = {
+      type: child.type,
+      props: child.props,
+      child: null,
+      parent: fiber,
+      sibling: null,
+      dom: null,
+    };
+
+    if (index === 0) {
+      fiber.child = newFiber;
+    } else {
+      prevChild.sibling = newFiber;
+    }
+
+    prevChild = newFiber;
+  });
+}
+
+function render(el, container) {
+  nextWorkOfUnit = {
+    dom: container,
+    props: {
+      children: [el],
+    },
+  };
+}
+
+let nextWorkOfUnit = null;
+
+function workLoop(deadline) {
+  let shouldYield = false;
+
+  while (nextWorkOfUnit && !shouldYield) {
+    nextWorkOfUnit = preformWorkOfUnit(nextWorkOfUnit);
+    shouldYield = deadline.timeRemaining() < 1;
+  }
+
+  requestIdleCallback(workLoop);
+}
+
+function preformWorkOfUnit(fiber) {
+  if (!fiber.dom) {
+    const dom = (fiber.dom = createDom(fiber.type));
+    fiber.parent.dom.append(dom);
+
+    updateProps(dom, fiber.props);
+  }
+
+  initChildren(fiber);
+
+  if (fiber.child) {
+    return fiber.child;
+  }
+
+  if (fiber.sibling) {
+    return fiber.sibling;
+  }
+
+  return fiber.parent?.sibling;
+}
+
+requestIdleCallback(workLoop);
 
 const React = {
   render,
